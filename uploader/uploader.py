@@ -28,7 +28,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Upload firmware to Atmega328p based devices that run the corresponding bootloader')
     parser.add_argument('--port', '-p', help='serial port', required=True)
     parser.add_argument('--baudrate', type=int, default=19200, help="baudrate of serial connection")
-    parser.add_argument('--file', '-f', help='firmware hex file', required = True)
+    parser.add_argument('--file', '-f', help='firmware hex file', required=True)
     parser.add_argument('--verbose', '-v', action='store_true')
 
     try:

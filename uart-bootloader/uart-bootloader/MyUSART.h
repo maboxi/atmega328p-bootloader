@@ -47,8 +47,12 @@ void USART_Init(){
 	UCSR0B |= (1<<RXCIE0);
 }
 
-void USART_Transmit(char data){
+void USART_AwaitTx() {
 	while(!(UCSR0A & (1<<UDRE0))) ;
+}
+
+void USART_Transmit(char data){
+	USART_AwaitTx();
 	UDR0 = data;
 }
 
@@ -144,10 +148,15 @@ void USART_TransmitHexChar(uint8_t i) {
 	//USART_Transmit(' ');
 }
 
-void USART_TransmitBinChar(uint8_t i) {
-	USART_Transmit('0');
-	USART_Transmit('b');
-	for(int j = 7; j >= 0; j--)
+void USART_TransmitBinChar(uint8_t i, uint8_t num_bits, uint8_t bool_prefix) {
+	if(bool_prefix) {
+		USART_Transmit('0');
+		USART_Transmit('b');
+	}
+	
+	if(num_bits == 0)
+		return;
+	for(int j = num_bits - 1; j >= 0; j--)
 		USART_Transmit(((i >> j) & 1) + 0x30);
 }
 

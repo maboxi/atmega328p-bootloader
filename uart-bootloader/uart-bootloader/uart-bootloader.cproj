@@ -132,6 +132,9 @@
     <Compile Include="MyI2C.h">
       <SubType>compile</SubType>
     </Compile>
+    <Compile Include="MyTimersMS.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="MyUSART.h">
       <SubType>compile</SubType>
     </Compile>
