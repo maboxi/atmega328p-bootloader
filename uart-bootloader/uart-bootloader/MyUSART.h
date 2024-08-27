@@ -105,6 +105,12 @@ char USART_Receive(){
 	return rx;
 }
 
+void USART_ReceiveMultiple(char* buffer, uint8_t bufsize) {
+	for(uint8_t i = 0; i < bufsize; i++) {
+		buffer[i] = USART_Receive();
+	}
+}
+
 uint8_t USART_IsRXBufferEmpty() {
 	return rxBufferFree == RX_BUFFERSIZE ? 1 : 0;
 }

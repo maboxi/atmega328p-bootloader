@@ -91,7 +91,6 @@ def read_hex_file(filename, bootloader_start_address, verbose):
                     hexfile['address_highest'] = address
 
 
-
                 data = []
                 data_binary = bytearray(source=':', encoding='ascii')
                 for i in range(bytecount):
@@ -163,7 +162,7 @@ if __name__ == '__main__':
         bl_version = None
         bl_section_start = None
         status = serial_send_code(ser, 'BL_COM_CMD_INFO')
-        if(status & comdefines['BL_COM_REPLY_OK']):
+        if(status & comdefines['BL_COM_REPLY_STATUSMASK'] == comdefines['BL_COM_REPLY_OK']):
             bl_version_len = int.from_bytes(ser.read())
             bl_version = ser.read(size=bl_version_len).decode('ascii')
             bl_section_start_len = int.from_bytes(ser.read())
@@ -180,7 +179,7 @@ if __name__ == '__main__':
 
         if(args.fuses):
             status = serial_send_code(ser, 'BL_COM_CMD_READFUSES')
-            if(status & comdefines['BL_COM_REPLY_OK']):
+            if(status & comdefines['BL_COM_REPLY_STATUSMASK'] == comdefines['BL_COM_REPLY_OK']):
                 fuse_values = ser.read(size=3)
                 print('Fuse values:')
                 print(f'\tExtended: -----{(fuse_values[2] & 7):b}')
@@ -206,7 +205,8 @@ if __name__ == '__main__':
                 num_errors = 0
                 for line in hexfile['data']:
                     status = serial_send_code(ser, 'BL_COM_CMD_VERIFY')
-                    if(status & comdefines['BL_COM_REPLY_OK']):
+
+                    if(status & comdefines['BL_COM_REPLY_STATUSMASK'] == comdefines['BL_COM_REPLY_OK']):
                         # request hex file data
                         (bytecount, address, data, checksum_ok, data_binary) = line
 

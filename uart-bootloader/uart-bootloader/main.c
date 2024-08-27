@@ -90,6 +90,11 @@ Boot Loader Enable Switch Pin: If BLE Type is switch, define pin and ports here
 #define LED_GREEN 2
 #define LED_BLUE 4
 
+// hex file decoding
+#define HEX_RTYPE_DATARECORD 0
+#define HEX_RTYPE_EOF 1
+#define HEX_RTYPE_STARTSEGMENTADDRESSRECORD 3
+
 #include <stdint.h>
 #include <avr/io.h>
 #include <avr/boot.h>
@@ -110,6 +115,35 @@ void set_rgb_leds(uint8_t flag) {
 	temp &= ~(1<<PORTD5) & ~(1<<PORTD6) & ~(1<<PORTD7);
 	temp |= (flag & 0b111) << 5;
 	PORTD = temp;
+}
+
+uint8_t get_hex_val_8(uint8_t* hexval, uint8_t* read_buffer, uint8_t start) {
+	if(read_buffer[start] >= 'A' && read_buffer[start] <= 'F') {
+		*hexval = 0xA + (read_buffer[start] - 'A');
+	} else if(read_buffer[start] >= '0' && read_buffer[start] <= '9') {
+		*hexval = read_buffer[start] - '0';
+	} else {
+		return 1;
+	}
+	
+	*hexval = *hexval << 4;
+	
+	if(read_buffer[start + 1] >= 'A' && read_buffer[start + 1] <= 'F') {
+		*hexval += 0xA + (read_buffer[start + 1] - 'A');
+	} else if(read_buffer[start + 1] >= '0' && read_buffer[start +1] <= '9') {
+		*hexval += read_buffer[start + 1] - '0';
+	} else {
+		return 1;
+	}
+	
+	return 0;
+}
+
+uint8_t get_hex_val_16(uint16_t* hexval, uint8_t* read_buffer, uint8_t start) {
+	if(get_hex_val_8((uint8_t*) hexval, read_buffer, start) || get_hex_val_8((uint8_t*) hexval + 1, read_buffer, start + 1)) {
+		return 1;
+	}
+	return 0;
 }
 
 // bootloader entry
@@ -190,7 +224,88 @@ int main() {
 				}
 				// upload program
 				case 'u': {
-					USART_Transmit(BL_COM_REPLY_NOTIMPLEMENTEDYET);
+					USART_Transmit(BL_COM_REPLY_OK);
+					
+					uint8_t upload_running = 1;
+					while(upload_running) {
+						uint8_t read_buffer[9];
+						USART_ReceiveMultiple((char*)read_buffer, 9);
+						
+						if(read_buffer[0] != ':') {
+							USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_COLON);
+							upload_running = 0;
+							break;
+						}
+						
+						uint8_t bytecount;
+						if(get_hex_val_8(&bytecount, read_buffer, 1)) {
+							USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_8);
+							upload_running = 0;
+							break;
+						}
+						
+						uint8_t rtype;
+						if(get_hex_val_8(&rtype, read_buffer, 7)) {
+							USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_8);
+							upload_running = 0;
+							break;
+						}
+						
+						switch(rtype) {
+							case HEX_RTYPE_EOF: {
+								upload_running = 0;
+								break;
+							}
+							case HEX_RTYPE_STARTSEGMENTADDRESSRECORD: {
+								// TODO: handle
+								break;
+							}
+							case HEX_RTYPE_DATARECORD: {
+								uint16_t address_val;
+								if(get_hex_val_16(&address_val, read_buffer, 3)) {
+									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_16);
+									upload_running = 0;
+									break;
+								}
+								
+								uint8_t* data_buf = alloca(bytecount * 2 + 3);
+								USART_ReceiveMultiple((char*)data_buf, bytecount * 2 + 3);
+								if(data_buf[bytecount * 2 + 2] != '\n') {
+									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_LINELEN);
+									upload_running = 0;
+									break;
+								}
+								
+								uint8_t checksum = 0;
+								for(uint8_t i = 0; i < bytecount + 1; i++) { // + 1: checksum
+									uint8_t byte;
+									if(get_hex_val_8(&byte, data_buf, 2*i)) {
+										USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_8);
+										upload_running = 0;
+										break;
+									}
+									data_buf[i] = byte;
+									checksum += byte;
+								}
+								
+								// checksum check
+								checksum += bytecount;
+								checksum += rtype;
+								checksum += (uint8_t) (address_val >> 8);
+								checksum += (uint8_t) address_val;
+								
+								if(checksum != 0) {
+									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_CHECKSUM);
+									upload_running = 0;
+									break;
+								}
+								
+								// TODO: handle data pagewise
+								USART_Transmit(BL_COM_REPLY_OK);
+							}
+						}
+					}
+					
 					break;
 				}
 				// verify memory
