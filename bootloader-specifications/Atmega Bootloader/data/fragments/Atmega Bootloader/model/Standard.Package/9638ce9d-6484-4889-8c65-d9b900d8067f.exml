@@ -1,0 +1,21 @@
+<?xml version="1.0" ?>
+<!--GENERATED FILE, PLEASE DO NOT EDIT!!!--><EXT object="bootloader" version="4">
+  <OBJECT>
+    <ID name="bootloader" mc="Standard.Package" uid="9638ce9d-6484-4889-8c65-d9b900d8067f"/>
+    <PID name="atmega bootloader" mc="Standard.Package" uid="9e55ad29-1f1b-4bd7-8681-a9212aece085"/>
+    <ATTRIBUTES>
+      <ATT name="IsInstantiable">false</ATT>
+      <ATT name="IsAbstract">false</ATT>
+      <ATT name="IsLeaf">false</ATT>
+      <ATT name="IsRoot">false</ATT>
+      <ATT name="Visibility">Public</ATT>
+      <ATT name="Name"><![CDATA[bootloader]]></ATT>
+      <ATT name="status">1970354901745664</ATT>
+    </ATTRIBUTES>
+    <DEPENDENCIES>
+      <COMP relation="OwnedBehavior">
+        <COMPID name="Bootloader Main Statemachine" mc="Standard.StateMachine" uid="65a89ae8-0f04-42d4-a67e-c7ebda8f5fbc"/>
+      </COMP>
+    </DEPENDENCIES>
+  </OBJECT>
+</EXT>

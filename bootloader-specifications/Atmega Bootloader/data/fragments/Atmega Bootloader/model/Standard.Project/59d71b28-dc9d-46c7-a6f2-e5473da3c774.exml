@@ -1,0 +1,20 @@
+<?xml version="1.0" ?>
+<!--GENERATED FILE, PLEASE DO NOT EDIT!!!--><EXT object="Atmega Bootloader" version="4">
+  <OBJECT>
+    <ID name="Atmega Bootloader" mc="Standard.Project" uid="59d71b28-dc9d-46c7-a6f2-e5473da3c774"/>
+    <ATTRIBUTES>
+      <ATT name="ProjectContext"></ATT>
+      <ATT name="ProjectDescr"></ATT>
+      <ATT name="Name"><![CDATA[Atmega Bootloader]]></ATT>
+      <ATT name="status">1970354901745664</ATT>
+    </ATTRIBUTES>
+    <DEPENDENCIES>
+      <COMP relation="Model">
+        <COMPID name="atmega bootloader" mc="Standard.Package" uid="9e55ad29-1f1b-4bd7-8681-a9212aece085"/>
+      </COMP>
+      <COMP relation="DiagramRoot">
+        <COMPID name="Atmega Bootloader" mc="Infrastructure.DiagramSet" uid="e282a051-db64-4045-9d2d-ad6a5c6af04b"/>
+      </COMP>
+    </DEPENDENCIES>
+  </OBJECT>
+</EXT>

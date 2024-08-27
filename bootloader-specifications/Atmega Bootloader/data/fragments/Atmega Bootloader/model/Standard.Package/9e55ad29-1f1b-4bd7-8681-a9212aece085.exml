@@ -1,0 +1,22 @@
+<?xml version="1.0" ?>
+<!--GENERATED FILE, PLEASE DO NOT EDIT!!!--><EXT object="atmega bootloader" version="4">
+  <OBJECT>
+    <ID name="atmega bootloader" mc="Standard.Package" uid="9e55ad29-1f1b-4bd7-8681-a9212aece085"/>
+    <PID name="Atmega Bootloader" mc="Standard.Project" uid="59d71b28-dc9d-46c7-a6f2-e5473da3c774"/>
+    <ATTRIBUTES>
+      <ATT name="IsInstantiable">false</ATT>
+      <ATT name="IsAbstract">false</ATT>
+      <ATT name="IsLeaf">false</ATT>
+      <ATT name="IsRoot">false</ATT>
+      <ATT name="Visibility">Public</ATT>
+      <ATT name="Name"><![CDATA[atmega bootloader]]></ATT>
+      <ATT name="status">1970354901745664</ATT>
+    </ATTRIBUTES>
+    <DEPENDENCIES>
+      <COMP relation="OwnedElement">
+        <COMPID name="bootloader" mc="Standard.Package" uid="9638ce9d-6484-4889-8c65-d9b900d8067f"/>
+        <COMPID name="pc-tool" mc="Standard.Package" uid="1e6f5da9-399d-4e9d-ad05-6e5d0490e0cf"/>
+      </COMP>
+    </DEPENDENCIES>
+  </OBJECT>
+</EXT>
