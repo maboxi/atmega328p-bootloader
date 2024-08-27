@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectVersion>7.0</ProjectVersion>
     <ToolchainName>com.Atmel.AVRGCC8.C</ToolchainName>
-    <ProjectGuid>{13468b36-e2a6-44e1-96dc-d729f2ab4161}</ProjectGuid>
+    <ProjectGuid>{d6658579-bd49-4f26-bc2a-baf296465ac0}</ProjectGuid>
     <avrdevice>ATmega328P</avrdevice>
     <avrdeviceseries>none</avrdeviceseries>
     <OutputType>Executable</OutputType>
@@ -12,9 +12,9 @@
     <OutputFileName>$(MSBuildProjectName)</OutputFileName>
     <OutputFileExtension>.elf</OutputFileExtension>
     <OutputDirectory>$(MSBuildProjectDirectory)\$(Configuration)</OutputDirectory>
-    <AssemblyName>led-fastblink</AssemblyName>
-    <Name>led-fastblink</Name>
-    <RootNamespace>led-fastblink</RootNamespace>
+    <AssemblyName>led-slowblink</AssemblyName>
+    <Name>led-slowblink</Name>
+    <RootNamespace>led-slowblink</RootNamespace>
     <ToolchainFlavour>Native</ToolchainFlavour>
     <KeepTimersRunning>true</KeepTimersRunning>
     <OverrideVtor>false</OverrideVtor>
