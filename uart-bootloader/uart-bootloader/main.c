@@ -210,17 +210,6 @@ int main() {
 					uint8_t* buffer = (uint8_t*) alloca(num_bytes);
 					uint8_t buffer_counter = 0;
 					
-					uint16_t addr_val = (uint16_t) addr;
-					
-					USART_Transmit((uint8_t) (addr_val>> 8));
-					USART_Transmit((uint8_t) addr_val);
-					USART_Transmit(num_bytes);
-					/*
-					USART_Transmit(addrh);
-					USART_Transmit(addrl);
-					USART_Transmit(num_bytes);
-					*/
-					/*
 					while(buffer_counter < num_bytes) {
 						if(num_bytes == 1) {
 							// read byte
@@ -246,10 +235,8 @@ int main() {
 						}
 					}
 					
-					
 					for(uint8_t i = 0; i < num_bytes; i++)
 						USART_Transmit(buffer[i]);
-					*/
 					
 					set_rgb_leds(LED_GREEN);
 					

@@ -211,19 +211,18 @@ if __name__ == '__main__':
                         addrl = address & 0xFF
 
                         print(f'Requesting Line: address=0x{addrh:x}{addrl:x}, bytecount={bytecount}')
-                        #print(f'\taddr={addrh}{addrl}')
-                        #print(f'\taddr_bytes={addrh.to_bytes(1)}{addrl.to_bytes(1)}')
-                        #print(f'\tbytecount_bytes={bytecount.to_bytes(1)}')
-                        #print(f'\tbytecount_bytes={bytecount.to_bytes(1)[0]:x}')
 
                         ser.write(addrh.to_bytes(1))
                         ser.write(addrl.to_bytes(1))
                         ser.write(bytecount.to_bytes(1))
 
-                        memory_data = ser.read(size=3)
+                        memory_data = ser.read(size=bytecount)
 
-                        print(f'Received memory: address=0x{memory_data[0]:x}{memory_data[1]:x}, bytecount={memory_data[2]}')
-                        
+                        print('\t', end='')
+                        for byte in memory_data:
+                            print(f'{byte:x} ', end='')
+                        print()
+
                     else:
                         print(f'Error: verify request returned: {status}')
                         break
