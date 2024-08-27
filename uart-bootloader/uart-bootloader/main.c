@@ -197,14 +197,11 @@ int main() {
 				case 'v': {
 					USART_Transmit(BL_COM_REPLY_OK);
 					
-					set_rgb_leds(0);
+					set_rgb_leds(LED_BLUE);
 					
 					uint16_t addrh = (uint16_t) USART_Receive();
-					set_rgb_leds(1);
 					uint16_t addrl = (uint16_t) USART_Receive();
-					set_rgb_leds(2);
 					uint8_t num_bytes = USART_Receive();
-					set_rgb_leds(3);
 					
 					uint8_t* addr = (uint8_t*) ((addrh << 8) | addrl); 
 					uint8_t* buffer = (uint8_t*) alloca(num_bytes);
@@ -235,10 +232,11 @@ int main() {
 						}
 					}
 					
+					set_rgb_leds(LED_GREEN);
+					
 					for(uint8_t i = 0; i < num_bytes; i++)
 						USART_Transmit(buffer[i]);
 					
-					set_rgb_leds(LED_GREEN);
 					
 					break;
 				}

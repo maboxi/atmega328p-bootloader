@@ -201,6 +201,9 @@ if __name__ == '__main__':
                 print(f'TODO: upload hex file contents (verify: {verify})')
 
             if(verify):
+                print('Verifying memory...')
+                pagecounter = 0
+                num_errors = 0
                 for line in hexfile['data']:
                     status = serial_send_code(ser, 'BL_COM_CMD_VERIFY')
                     if(status & comdefines['BL_COM_REPLY_OK']):
@@ -210,7 +213,9 @@ if __name__ == '__main__':
                         addrh = (address >> 8) & 0xFF
                         addrl = address & 0xFF
 
-                        print(f'Requesting Line: address=0x{addrh:x}{addrl:x}, bytecount={bytecount}')
+                        # is
+                        if(args.verbose):
+                            print(f'0x{addrh:02x}{addrl:02x} | {bytecount:2} | ', end='')
 
                         ser.write(addrh.to_bytes(1))
                         ser.write(addrl.to_bytes(1))
@@ -218,14 +223,39 @@ if __name__ == '__main__':
 
                         memory_data = ser.read(size=bytecount)
 
-                        print('\t', end='')
-                        for byte in memory_data:
-                            print(f'{byte:x} ', end='')
-                        print()
+                        error_detected = False
+                        
+                        for i, byte in enumerate(memory_data):
+                            if(args.verbose):
+                                print(f'{byte:02x} ', end='')
+                            if(byte != data_binary[i + 1]):
+                                num_errors += 1
+                                error_detected = True
+                        if(args.verbose):
+                            print()
 
+                        # should
+                        if(error_detected):
+                            if(args.verbose):
+                                print('should be     ', end='')
+
+                            pagecounter += bytecount
+                            if(args.verbose):
+                                for byte in data_binary[1:]:
+                                    print(f'{byte:02x} ', end='')
+                                print()
                     else:
                         print(f'Error: verify request returned: {status}')
                         break
+
+                if(args.verbose): 
+                    print() 
+                if(num_errors == 0):
+                    print('\t=> No errors detected!')
+                else:
+                    print(f'\t=> Errors detected: {num_errors}')
+
+
 
 
         if not args.no_quit:

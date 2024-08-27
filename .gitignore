@@ -1,5 +1,7 @@
 .vs/
 Debug/
+.runtime/
+.index/
 
 atmega_gpio-utils.h
 

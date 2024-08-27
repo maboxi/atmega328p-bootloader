@@ -1,0 +1,16 @@
+<?xml version="1.0" ?>
+<!--GENERATED FILE, PLEASE DO NOT EDIT!!!--><EXT object="State Machine State Machine diagram" version="4">
+  <OBJECT>
+    <ID name="State Machine State Machine diagram" mc="Standard.StateMachineDiagram" uid="a6e6caf4-8e33-4353-9545-011cdcd686ca"/>
+    <PID name="Bootloader Upload Statemachine" mc="Standard.StateMachine" uid="79cd2527-db0d-4c52-96ce-30bece27a441"/>
+    <ATTRIBUTES>
+      <ATT name="UiDataVersion">1</ATT>
+      <ATT name="UiData"><![CDATA[eJztU1FP2zAQ/iuW3+u2pK2YFIogQRUiUNSOSXtC1/goZo5d2S40/352mzLSrVWQENvDnmL78t333d138emqkOQZjRVandAu61ByOozHsyfMHRHcP1HiygWeUG3mrNAcpdBsWUhmHTjkAuYGCuYPThuGEgtUztaDo2IarunmSkkBT9rcv5J26DC+NXqBxpVEQeG5JJR66VJw4GPfQC6xEqGWUtL2MG5vAb9Bp66USGslHP2phK04G/63LNcG2QbbQF8CNgeOfEt2sXITfGjIcuNTVEiCK5fOLr3G9TEcEj0D6XZqbG+qOVS3QRla7mXstOw6PJHn8BK6A4qD4Ww9kWvIH4XaDobAAAc5PPRaxxhFrV7Uj1pf+r1+q9Pt5jzng2MfPdx8CdZdKf2iMpih3BEydUaoOR2uqUnFTeq3ql9xew08WK+WeKkSXSy0Fc4Pag9bg1TJo5DcYMiQCRu6XH32IjKhftjmv5/PUwMvXk4GJZq6OaND5nzdJ77BWyZDBr9RtYSfs1HvQ/0TfhR8jyvSEcvOvl9M7s/PkqvRZHx3k36MURps6tvR/TLRG0v0/lvib1ri6/j2o72wN/QTUK+dtA==]]></ATT>
+      <ATT name="PreviewData"><![CDATA[data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABUAAAAVCAIAAAAmdTLBAAAAGElEQVR4nGP4TxlgGNU/qn9U/6j+EaofAB8cJiE1IQRUAAAAAElFTkSuQmCC]]></ATT>
+      <ATT name="JsStructure"></ATT>
+      <ATT name="Name"><![CDATA[State Machine State Machine diagram]]></ATT>
+      <ATT name="status">1970354901745664</ATT>
+    </ATTRIBUTES>
+    <DEPENDENCIES></DEPENDENCIES>
+  </OBJECT>
+</EXT>
