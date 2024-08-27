@@ -1,9 +1,9 @@
 /*
- * led_fastblink.c
+ * led-fastblink.c
  *
- * Created: 27.08.2024 15:34:18
+ * Created: 28.08.2024 01:08:45
  * Author : maxip
- */ 
+ */
 
 #define F_CPU 16000000
 #include <avr/io.h>
@@ -30,11 +30,11 @@ int main(void)
 			PORTB = PORTB & (~(1<<PORTB5));
 			counter++;
 			_delay_ms(100);
-		} else {
+			} else {
 			PORTB = PORTB | (1<<PORTB5);
 			_delay_ms(20);
 		}
-	
+		
 		set_rgb_leds(counter);
 	}
 }
