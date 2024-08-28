@@ -140,7 +140,7 @@ uint8_t get_hex_val_8(uint8_t* hexval, uint8_t* read_buffer, uint8_t start) {
 }
 
 uint8_t get_hex_val_16(uint16_t* hexval, uint8_t* read_buffer, uint8_t start) {
-	if(get_hex_val_8((uint8_t*) hexval, read_buffer, start) || get_hex_val_8((uint8_t*) hexval + 1, read_buffer, start + 1)) {
+	if(get_hex_val_8((uint8_t*) hexval + 1, read_buffer, start) || get_hex_val_8((uint8_t*) hexval, read_buffer, start + 2)) {
 		return 1;
 	}
 	return 0;
@@ -226,8 +226,11 @@ int main() {
 				case 'u': {
 					USART_Transmit(BL_COM_REPLY_OK);
 					
+					set_rgb_leds(0);
+					
 					uint8_t upload_running = 1;
 					while(upload_running) {
+						set_rgb_leds(7);
 						uint8_t read_buffer[9];
 						USART_ReceiveMultiple((char*)read_buffer, 9);
 						
@@ -251,13 +254,24 @@ int main() {
 							break;
 						}
 						
+						USART_Transmit(BL_COM_REPLY_OK | BL_COM_UPLOADOK_HEADEROK);
+						set_rgb_leds(6);
+						
+						uint8_t* data_buf = alloca(bytecount * 2 + 2);
+						USART_ReceiveMultiple((char*)data_buf, bytecount * 2 + 2);
+						
+						set_rgb_leds(5);
+						
 						switch(rtype) {
 							case HEX_RTYPE_EOF: {
+								USART_Transmit(BL_COM_REPLY_OK | BL_COM_UPLOADOK_FINISHED);
+								
 								upload_running = 0;
 								break;
 							}
 							case HEX_RTYPE_STARTSEGMENTADDRESSRECORD: {
 								// TODO: handle
+								USART_Transmit(BL_COM_REPLY_OK);
 								break;
 							}
 							case HEX_RTYPE_DATARECORD: {
@@ -267,15 +281,7 @@ int main() {
 									upload_running = 0;
 									break;
 								}
-								
-								uint8_t* data_buf = alloca(bytecount * 2 + 3);
-								USART_ReceiveMultiple((char*)data_buf, bytecount * 2 + 3);
-								if(data_buf[bytecount * 2 + 2] != '\n') {
-									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_LINELEN);
-									upload_running = 0;
-									break;
-								}
-								
+																
 								uint8_t checksum = 0;
 								for(uint8_t i = 0; i < bytecount + 1; i++) { // + 1: checksum
 									uint8_t byte;
@@ -300,8 +306,11 @@ int main() {
 									break;
 								}
 								
-								// TODO: handle data pagewise
-								USART_Transmit(BL_COM_REPLY_OK);
+								set_rgb_leds(4);
+								
+								// TODO: handle data upload pagewise
+								
+								USART_Transmit(BL_COM_REPLY_OK | BL_COM_UPLOADOK_LINEOK);
 							}
 						}
 					}

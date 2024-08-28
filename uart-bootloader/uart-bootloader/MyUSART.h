@@ -56,6 +56,11 @@ void USART_Transmit(char data){
 	UDR0 = data;
 }
 
+void USART_TransmitMultiple(char* data, uint8_t len) {
+	for(uint8_t i = 0; i < len; i++)
+		USART_Transmit(data[i]);
+}
+
 void USART_NewLine() {
 	USART_Transmit(ASCII_CR);
 	USART_Transmit(ASCII_LF);

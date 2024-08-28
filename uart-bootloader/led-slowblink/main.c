@@ -5,6 +5,11 @@
  * Author : maxip
  */ 
 
+// Red, Green, Blue Test LEDs
+#define LED_RED	1
+#define LED_GREEN 2
+#define LED_BLUE 4
+
 #define F_CPU 16000000
 #include <avr/io.h>
 #include <util/delay.h>
@@ -18,16 +23,21 @@ void set_rgb_leds(uint8_t flag) {
 
 int main(void)
 {
-	uint8_t counter = 0;
-
 	DDRD |= (1<<DDD5) | (1<<DDD6) | (1<<DDD7);
 	PORTD &= ~(1<<PORTD5) & ~(1<<PORTD6) & ~(1<<PORTD7);
 
 	while (1)
-	{
-		counter++;
-		_delay_ms(2000);
+	{	
+		set_rgb_leds(LED_RED);
+		_delay_ms(5000);
 		
-		set_rgb_leds(counter);
+		set_rgb_leds(LED_RED | LED_GREEN);
+		_delay_ms(1000);
+		
+		set_rgb_leds(LED_BLUE);
+		_delay_ms(5000);
+		
+		set_rgb_leds(LED_GREEN);
+		_delay_ms(3000);
 	}
 }
