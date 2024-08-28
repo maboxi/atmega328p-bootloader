@@ -5,6 +5,10 @@
  * Author : maxip
  */ 
 
+#define F_CPU 16000000
+#define BL_INFO_VERSION "0.1"
+#define BL_INFO_BLSECTIONSTART (2 * 0x3800)
+
 /*
 
 Links:
@@ -20,7 +24,7 @@ read with: C:\tools\avrdude-v7.3-windows-x64\avrdude.exe -c usbasp -p m328p -n -
 
 extended fuse byte:	-----101
 	^= Brown-Out Detector trigger level 101
-high fuse byte:		11011010
+high fuse byte:		11011010 --larger bls--> 0b11011000 = 0xD8
 	^=
 		- External Reset Disable:	-
 		- debugWire enable:			-
@@ -29,13 +33,13 @@ high fuse byte:		11011010
 		- Watchtog Timer Always On: -
 		- EEPROM memory preserved:	-
 		- BOOTSZ1:					X
-		- BOOTSZ0:					-
+		- BOOTSZ0:					X
 		- BOOTRST					X
-		=> BOOTSZ = 01, BOOTRST programmed =>
+		=> BOOTSZ = 11, BOOTRST programmed =>
 			- reset vector points to bootloader section
-			- 1024 words boot (= 32 pages)
-			- Application Flash: 0x0000 - 0x3BFF
-			- Bootloader Flash:  0x3C00 - 0x3FFF
+			- 2048 words boot (= 64 pages)
+			- Application Flash: 0x0000 - 0x37FF
+			- Bootloader Flash:  0x3800 - 0x3FFF
 	
 low fuse byte:		11111111
 
@@ -51,10 +55,6 @@ Memory Information (see atmega datasheet):
 	- PC for SPM instruction: ZH & ZL
 
 */
-
-#define F_CPU 16000000
-#define BL_INFO_VERSION "0.1"
-#define BL_INFO_BLSECTIONSTART (2 * 0x3C00)
 
 #include "bootloader-communication.h"
 
@@ -106,9 +106,97 @@ Boot Loader Enable Switch Pin: If BLE Type is switch, define pin and ports here
 #define BAUDRATE 19200
 #include "MyUSART.h"
 
+uint16_t page_start_address = 0x0;
+uint16_t next_page_start_address = 0x0 + SPM_PAGESIZE;
+uint8_t page_used = 0;
+
 uint8_t* const bl_sectionstartaddress = (uint8_t* const) BL_INFO_BLSECTIONSTART;
 
 __attribute__ ((section (".application"))) int application();
+
+void handle_final_write() {
+	uint16_t counter = 0;
+	
+	for(counter = 0; counter < SPM_PAGESIZE; counter += 2) {
+		boot_page_fill_safe(counter, 0xABCD);
+	}
+	boot_spm_busy_wait();
+	
+	boot_spm_busy_wait();
+	boot_page_erase(0x0);
+	boot_spm_busy_wait();
+	boot_page_write(0x0);
+	boot_spm_busy_wait();
+	
+	/*
+	if(page_used) {
+		// write page
+		boot_spm_busy_wait();
+		boot_page_erase(page_start_address);
+		boot_spm_busy_wait();
+		boot_page_write(page_start_address);
+		boot_spm_busy_wait();
+	}
+	*/
+}
+
+void handle_hex_data(uint16_t addr, uint8_t bytecount, uint8_t* data_buf) {
+	/*
+	uint8_t sreg;
+	
+	sreg = SREG;
+	cli();
+	
+	uint16_t address_offset = 0;
+	uint16_t counter = 0;
+	
+	// new data starts in current page
+	if(addr >= page_start_address && addr < next_page_start_address) {
+		if(!page_used) {
+			// fill temporary page buffer with current content of new page
+			for(counter = 0; counter < SPM_PAGESIZE; counter += 2) {
+				uint16_t word = pgm_read_word(page_start_address + counter);
+				//boot_page_fill_safe(counter, 0xABCD);
+			}
+			boot_spm_busy_wait();
+		}
+		
+		address_offset = addr - page_start_address;
+		for(counter = 0; counter < bytecount && addr + counter < next_page_start_address; counter += 2) {
+			// write byte to temporary page buffer
+			uint16_t word = data_buf[address_offset + 1];
+			word <<= 8;
+			word |= data_buf[address_offset];
+			//boot_page_fill_safe(address_offset + counter, 0xABCD);
+			page_used = 1;
+		}
+		
+		// handle data that spans over multiple pages
+		if(addr + bytecount - 1 >= next_page_start_address) {
+			uint16_t overlap = addr + bytecount - next_page_start_address;
+			handle_hex_data(next_page_start_address, overlap, data_buf + bytecount - overlap);
+		}
+		
+	} else {
+		if(page_used) {
+			boot_spm_busy_wait();
+			boot_page_erase(page_start_address);
+			boot_spm_busy_wait();
+			boot_spm_busy_wait();
+			boot_page_write(page_start_address);
+			boot_spm_busy_wait();
+		}
+		
+		page_start_address = addr - (addr % SPM_PAGESIZE);
+		next_page_start_address = page_start_address + SPM_PAGESIZE;
+		page_used = 0;
+		
+		handle_hex_data(addr, bytecount, data_buf);
+	}
+	
+	SREG = sreg;
+	*/
+}
 
 void set_rgb_leds(uint8_t flag) {
 	uint8_t temp = PORTD;
@@ -158,7 +246,7 @@ int main() {
 	sei();
 	
 	// disable SPM for the bootloader section
-	// boot_lock_bits_set_safe(0b0011); // TODO!
+	boot_lock_bits_set (_BV (BLB11));
 	
 	// Boot Mode Enable Switch
 	BLE_SWITCH_DDRX &= (1<<BLE_SWITCH_DDRXn);
@@ -264,13 +352,69 @@ int main() {
 						
 						switch(rtype) {
 							case HEX_RTYPE_EOF: {
-								USART_Transmit(BL_COM_REPLY_OK | BL_COM_UPLOADOK_FINISHED);
 								
+								uint16_t address_val;
+								if(get_hex_val_16(&address_val, read_buffer, 3)) {
+									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_16);
+									upload_running = 0;
+									break;
+								}
+								
+								uint8_t checksum_val;
+								if(get_hex_val_8(&checksum_val, data_buf, 0)) {
+									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_16);
+									upload_running = 0;
+									break;
+								}
+								
+								uint8_t checksum = 0;
+								checksum += bytecount;
+								checksum += rtype;
+								checksum += (uint8_t) (address_val >> 8);
+								checksum += (uint8_t) address_val;
+								checksum += checksum_val;
+								
+								if(checksum != 0) {
+									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_CHECKSUM);
+									upload_running = 0;
+									break;
+								}
+								
+								handle_final_write();
+								USART_Transmit(BL_COM_REPLY_OK | BL_COM_UPLOADOK_FINISHED);
 								upload_running = 0;
 								break;
 							}
 							case HEX_RTYPE_STARTSEGMENTADDRESSRECORD: {
-								// TODO: handle
+								/*
+								uint16_t address_val;
+								if(get_hex_val_16(&address_val, read_buffer, 3)) {
+									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_16);
+									upload_running = 0;
+									break;
+								}
+								
+								uint8_t checksum_val;
+								if(get_hex_val_8(&checksum_val, data_buf, 0)) {
+									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_16);
+									upload_running = 0;
+									break;
+								}
+								
+								uint8_t checksum = 0;
+								checksum += bytecount;
+								checksum += rtype;
+								checksum += (uint8_t) (address_val >> 8);
+								checksum += (uint8_t) address_val;
+								checksum += checksum_val;
+								
+								if(checksum != 0) {
+									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_CHECKSUM);
+									upload_running = 0;
+									break;
+								}
+								*/
+								
 								USART_Transmit(BL_COM_REPLY_OK);
 								break;
 							}
@@ -309,6 +453,8 @@ int main() {
 								set_rgb_leds(4);
 								
 								// TODO: handle data upload pagewise
+								
+								handle_hex_data(address_val, bytecount, data_buf);
 								
 								USART_Transmit(BL_COM_REPLY_OK | BL_COM_UPLOADOK_LINEOK);
 							}
@@ -374,10 +520,13 @@ int main() {
 			set_rgb_leds(LED_GREEN);
 		}
 		_delay_ms(50);
-		USART_AwaitTx();
+		USART_AwaitTX();
 	}
 	
 	// TODO: reset all peripherals to default settings
+	
+	// enable rww section
+	boot_rww_enable_safe();
 	
 	// select application interrupt vector
 	cli();

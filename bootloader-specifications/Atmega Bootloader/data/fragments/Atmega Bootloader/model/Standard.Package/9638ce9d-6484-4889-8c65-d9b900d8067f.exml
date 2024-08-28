@@ -15,7 +15,7 @@
     <DEPENDENCIES>
       <COMP relation="OwnedBehavior">
         <COMPID name="Bootloader Main Statemachine" mc="Standard.StateMachine" uid="65a89ae8-0f04-42d4-a67e-c7ebda8f5fbc"/>
-        <COMPID name="Bootloader Upload Statemachine" mc="Standard.StateMachine" uid="79cd2527-db0d-4c52-96ce-30bece27a441"/>
+        <COMPID name="Activity" mc="Standard.Activity" uid="6aa2d780-dbf5-47ba-b4ad-f0a69cb91be0"/>
       </COMP>
     </DEPENDENCIES>
   </OBJECT>

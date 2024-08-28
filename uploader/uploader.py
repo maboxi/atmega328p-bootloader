@@ -1,8 +1,11 @@
 from serial import Serial, SerialException 
 import argparse
+import os
+import argparse
 import re
 import pprint
 import time
+from termcolor import colored
 
 TOOL_VERSION = "0.1"
 
@@ -57,7 +60,8 @@ def verify_program(ser, hexfile, comdefines, args):
                 pagecounter += bytecount
                 if(args.verbose):
                     for byte in data_binary:
-                        print(f'{byte:02x} ', end='')
+                        print(colored(f'{byte:02x} ', 'red'), end='')
+                    print()
                     print()
         else:
             print(f'Error: verify request returned: {status}')
@@ -253,7 +257,7 @@ def read_hex_file(filename, bootloader_start_address, verbose):
 
 
 if __name__ == '__main__':
-    import argparse
+    os.system('color')
 
     parser = argparse.ArgumentParser(description='Upload firmware to Atmega328p based devices that run the corresponding bootloader')
     parser.add_argument('--port', '-p', help='serial port', required=True)
