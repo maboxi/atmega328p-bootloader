@@ -159,6 +159,7 @@ def serial_send_code(ser: Serial, code):
     return int.from_bytes(ser.read(size=1))
 
 def verify_program(ser, hexfile, comdefines, args):
+    print()
     print('Verifying memory...')
     pagecounter = 0
     num_errors = 0
@@ -242,6 +243,7 @@ def upload_error_handling(reply, linenum, header:bool, comdefines, args):
         return False
 
 def upload_program(ser:Serial, hexfile: dict, comdefines, args):
+    print()
     print(f'Starting upload: {len(hexfile['lines'])} lines...')
     num_errors = 0
 
@@ -271,7 +273,8 @@ def upload_program(ser:Serial, hexfile: dict, comdefines, args):
         print(f'Line {linenum:3} Error: upload request returned {status}')
 
     if(num_errors == 0):
-        print(f'\t=> Upload complete!')
+        mem_usage = float((hexfile['address_highest'] - hexfile['address_lowest'])) / float(hexfile['bootloader_start_address'])
+        print(f'\t=> Upload complete! Memory usage: {100*mem_usage:.1}%')
     else:
         print(f'\t=> Upload: {num_errors} errors occured!')
     
@@ -319,6 +322,7 @@ def read_hex_file(filename, bootloader_start_address, verbose):
     hexfile['data'] = []
     hexfile['lines'] = []
     hexfile['num_unknown_records'] = 0
+    hexfile['bootloader_start_address'] = bootloader_start_address
     hexfile['bootloader_section_intersect'] = False
     hexfile['address_lowest'] = None
     hexfile['address_highest'] = None
@@ -472,6 +476,7 @@ if __name__ == '__main__':
 
         # Quit bootloader
         if(not args.no_quit):
+            print()
             ser.write(comdefines['BL_COM_CMD_QUIT'])
             status = int.from_bytes(ser.read(size=1))
             if(status == comdefines['BL_COM_REPLY_QUITTING']):
