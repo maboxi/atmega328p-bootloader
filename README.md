@@ -17,6 +17,7 @@ The bootloader currently supports the following instructions:
 - 'q': Quit the bootloader and start the application located at 0x0
 - 'u': Upload a hex file to the application section of the flash memory
 - 'v': Verify sections of the flash memory. The bootloader only reads out the memory, verification has to happen in the tool that addresses the bootloader
+- 'f': Reads the fuse bytes (extended, high, low) and the locks byte from the microcontroller. The tool then decodes these bytes and displays the resulting microcontroller configuration
 
 
 ## Python Bootloader-Tool
@@ -40,3 +41,17 @@ Python tool usage (developed using Python 3.12.0):
         -i, --info
         --no-quit             don't quit bootloader after tasks are finished
         -v, --verbose
+
+## Useful AVRDUDE Commands
+
+- Read fuses: -U lfuse|hfuse|efuse:r:-:b -> Displays binary representation of fuse values
+- Write fuses: -U lfuse|hfuse|efuse:w:<fuseval>:m -> Writes the given fuseval into the selected fuse byte
+    - ATTENTION: don't forget the number system prefix before immediate values (0x... / 0b...)! Else you will probably brick the microcontroller by disabling the external reset!!! (this definitely didn't happen to me....)
+
+
+## AVR Specifications and other interesting links
+
+- Atmega328P Datasheet: https://ww1.microchip.com/downloads/en/DeviceDoc/Atmel-7810-Automotive-Microcontrollers-ATmega328P_Datasheet.pdf
+- AVR Libc Documentation: https://www.nongnu.org/avr-libc/user-manual/index.html
+- AVR Instruction Set: https://ww1.microchip.com/downloads/en/devicedoc/atmel-0856-avr-instruction-set-manual.pdf
+- Inline Assembler: https://www.nongnu.org/avr-libc/user-manual/inline_asm.html
