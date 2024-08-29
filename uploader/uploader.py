@@ -95,12 +95,48 @@ def decode_fuse_low(fuse):
 
     print(f'\tStart-up times for clock selection: SUT1..0 = {f_sut10} ')
 
+def decode_locks(locks):
+    blb1211 = (locks & 0b00110000) >> 4
+    blb0201 = (locks & 0b00001100) >> 2
+    lb21 = locks & 0b00000011
+
+    print('\tExternal Protection Mode: ', end='')
+    match(lb21):
+        case 0b11:
+            print('1 => No memory lock features enabled')
+        case 0b10:
+            print('2 => Programming of Flash and EEPROM is disabled for both Serial and Parallel programming, but Verification is still possible. The Fuse bits are locked in both Serial and Parallel programming mode')
+        case 0b00:
+            print('3 => Programming and verification of Flash and EEPROM is disabled for both Serial and Parallel programming. The Fuse bits are locked in both Serial and Parallel programming mode')
+    
+    print('\tInteral Protection Mode for Application section: ', end='')
+    match(blb0201):
+        case 0b11:
+            print('1 => No restrictions for SPM or LPM accessing the Application section')
+        case 0b10:
+            print('2 => No write via SPM')
+        case 0b00:
+            print('3 => No write via SPM, and no read from Boot Loader section via LPM')
+        case 0b01:
+            print('4 => No read from Boot Loader section via LPM')
+
+    print('\tInteral Protection Mode for Boot Loader section: ', end='')
+    match(blb1211):
+        case 0b11:
+            print('1 => No restrictions for SPM or LPM accessing the Boot Loader section')
+        case 0b10:
+            print('2 => No write via SPM')
+        case 0b00:
+            print('3 => No write via SPM, and no read from Application section via LPM')
+        case 0b01:
+            print('4 => No read from Application section via LPM')
+
 
 
 def read_fuses(ser, comdefines, args):
     status = serial_send_code(ser, 'BL_COM_CMD_READFUSES')
     if(status & comdefines['BL_COM_REPLY_STATUSMASK'] == comdefines['BL_COM_REPLY_OK']):
-        fuse_values = ser.read(size=3)
+        fuse_values = ser.read(size=4)
         print('-'*90)
         print('Fuse values:')
 
@@ -110,6 +146,8 @@ def read_fuses(ser, comdefines, args):
         decode_fuse_high(fuse_values[1])
         print(f'Low: {fuse_values[0]:b}')
         decode_fuse_low(fuse_values[0])
+        print(f'Locks: {fuse_values[3]:b}')
+        decode_locks(fuse_values[3])
         print('-'*90)
     else:
         print(f'Error: fuse read request returned: {status}')
@@ -384,7 +422,7 @@ if __name__ == '__main__':
 
         print(f'Trying to connect to bootloader on serial port {args.port} with BR {args.baudrate}...')
 
-        ser = Serial(args.port, args.baudrate, timeout=100)
+        ser = Serial(args.port, args.baudrate, timeout=5)
         time.sleep(0.1)
 
         # request misc information from bootloader
@@ -407,12 +445,14 @@ if __name__ == '__main__':
 
         # read fuses
         if(args.fuses):
+            time.sleep(1)
             read_fuses(ser, comdefines, args)
 
         # hex file: upload and / or verify
         verify = not args.no_verify
         upload = not args.no_upload
         if(args.file and (verify or upload)):
+            time.sleep(1)
             print(f'Reading hex input file {args.file}: ', end='')
             
             hexfile = read_hex_file(args.file, bl_section_start, args.verbose)

@@ -114,21 +114,16 @@ uint8_t* const bl_sectionstartaddress = (uint8_t* const) BL_INFO_BLSECTIONSTART;
 
 __attribute__ ((section (".application"))) int application();
 
-void handle_final_write() {
-	uint16_t counter = 0;
-	
-	for(counter = 0; counter < SPM_PAGESIZE; counter += 2) {
-		boot_page_fill_safe(counter, 0xABCD);
-	}
-	boot_spm_busy_wait();
-	
-	boot_spm_busy_wait();
-	boot_page_erase(0x0);
-	boot_spm_busy_wait();
-	boot_page_write(0x0);
-	boot_spm_busy_wait();
-	
-	/*
+
+void set_rgb_leds(uint8_t flag) {
+	uint8_t temp = PORTD;
+	temp &= ~(1<<PORTD5) & ~(1<<PORTD6) & ~(1<<PORTD7);
+	temp |= (flag & 0b111) << 5;
+	PORTD = temp;
+}
+
+
+static inline void handle_final_write() {
 	if(page_used) {
 		// write page
 		boot_spm_busy_wait();
@@ -137,11 +132,9 @@ void handle_final_write() {
 		boot_page_write(page_start_address);
 		boot_spm_busy_wait();
 	}
-	*/
 }
 
 void handle_hex_data(uint16_t addr, uint8_t bytecount, uint8_t* data_buf) {
-	/*
 	uint8_t sreg;
 	
 	sreg = SREG;
@@ -153,21 +146,27 @@ void handle_hex_data(uint16_t addr, uint8_t bytecount, uint8_t* data_buf) {
 	// new data starts in current page
 	if(addr >= page_start_address && addr < next_page_start_address) {
 		if(!page_used) {
+			// enable reading (page write & erase will disable this)
+			boot_spm_busy_wait();
+			boot_rww_enable();
+			
 			// fill temporary page buffer with current content of new page
 			for(counter = 0; counter < SPM_PAGESIZE; counter += 2) {
 				uint16_t word = pgm_read_word(page_start_address + counter);
-				//boot_page_fill_safe(counter, 0xABCD);
+				boot_spm_busy_wait();
+				boot_page_fill(counter, word);
 			}
 			boot_spm_busy_wait();
 		}
 		
 		address_offset = addr - page_start_address;
 		for(counter = 0; counter < bytecount && addr + counter < next_page_start_address; counter += 2) {
-			// write byte to temporary page buffer
-			uint16_t word = data_buf[address_offset + 1];
+			// write word to temporary page buffer
+			uint16_t word = data_buf[counter + 1];
 			word <<= 8;
-			word |= data_buf[address_offset];
-			//boot_page_fill_safe(address_offset + counter, 0xABCD);
+			word |= data_buf[counter];
+			boot_spm_busy_wait();
+			boot_page_fill(address_offset + counter, word);
 			page_used = 1;
 		}
 		
@@ -195,14 +194,6 @@ void handle_hex_data(uint16_t addr, uint8_t bytecount, uint8_t* data_buf) {
 	}
 	
 	SREG = sreg;
-	*/
-}
-
-void set_rgb_leds(uint8_t flag) {
-	uint8_t temp = PORTD;
-	temp &= ~(1<<PORTD5) & ~(1<<PORTD6) & ~(1<<PORTD7);
-	temp |= (flag & 0b111) << 5;
-	PORTD = temp;
 }
 
 uint8_t get_hex_val_8(uint8_t* hexval, uint8_t* read_buffer, uint8_t start) {
@@ -234,6 +225,227 @@ uint8_t get_hex_val_16(uint16_t* hexval, uint8_t* read_buffer, uint8_t start) {
 	return 0;
 }
 
+static inline void _handle_cmd_upload() {
+	set_rgb_leds(0);
+					
+	uint8_t upload_running = 1;
+	while(upload_running) {
+		set_rgb_leds(7);
+		uint8_t read_buffer[9];
+		USART_ReceiveMultiple((char*)read_buffer, 9);
+						
+		if(read_buffer[0] != ':') {
+			USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_COLON);
+			upload_running = 0;
+			break;
+		}
+						
+		uint8_t bytecount;
+		if(get_hex_val_8(&bytecount, read_buffer, 1)) {
+			USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_8);
+			upload_running = 0;
+			break;
+		}
+						
+		uint8_t rtype;
+		if(get_hex_val_8(&rtype, read_buffer, 7)) {
+			USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_8);
+			upload_running = 0;
+			break;
+		}
+						
+		USART_Transmit(BL_COM_REPLY_OK | BL_COM_UPLOADOK_HEADEROK);
+		set_rgb_leds(6);
+						
+		uint8_t* data_buf = alloca(bytecount * 2 + 2);
+		USART_ReceiveMultiple((char*)data_buf, bytecount * 2 + 2);
+						
+		set_rgb_leds(5);
+						
+		switch(rtype) {
+			case HEX_RTYPE_EOF: {
+								
+				uint16_t address_val;
+				if(get_hex_val_16(&address_val, read_buffer, 3)) {
+					USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_16);
+					upload_running = 0;
+					break;
+				}
+								
+				uint8_t checksum_val;
+				if(get_hex_val_8(&checksum_val, data_buf, 0)) {
+					USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_16);
+					upload_running = 0;
+					break;
+				}
+								
+				uint8_t checksum = 0;
+				checksum += bytecount;
+				checksum += rtype;
+				checksum += (uint8_t) (address_val >> 8);
+				checksum += (uint8_t) address_val;
+				checksum += checksum_val;
+								
+				if(checksum != 0) {
+					USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_CHECKSUM);
+					upload_running = 0;
+					break;
+				}
+								
+				handle_final_write();
+				USART_Transmit(BL_COM_REPLY_OK | BL_COM_UPLOADOK_FINISHED);
+				upload_running = 0;
+				break;
+			}
+			case HEX_RTYPE_STARTSEGMENTADDRESSRECORD: {
+				/*
+				uint16_t address_val;
+				if(get_hex_val_16(&address_val, read_buffer, 3)) {
+					USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_16);
+					upload_running = 0;
+					break;
+				}
+								
+				uint8_t checksum_val;
+				if(get_hex_val_8(&checksum_val, data_buf, 0)) {
+					USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_16);
+					upload_running = 0;
+					break;
+				}
+								
+				uint8_t checksum = 0;
+				checksum += bytecount;
+				checksum += rtype;
+				checksum += (uint8_t) (address_val >> 8);
+				checksum += (uint8_t) address_val;
+				checksum += checksum_val;
+								
+				if(checksum != 0) {
+					USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_CHECKSUM);
+					upload_running = 0;
+					break;
+				}
+				*/
+								
+				USART_Transmit(BL_COM_REPLY_OK);
+				break;
+			}
+			case HEX_RTYPE_DATARECORD: {
+				uint16_t address_val;
+				if(get_hex_val_16(&address_val, read_buffer, 3)) {
+					USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_16);
+					upload_running = 0;
+					break;
+				}
+																
+				uint8_t checksum = 0;
+				for(uint8_t i = 0; i < bytecount + 1; i++) { // + 1: checksum
+					uint8_t byte;
+					if(get_hex_val_8(&byte, data_buf, 2*i)) {
+						USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_8);
+						upload_running = 0;
+						break;
+					}
+					data_buf[i] = byte;
+					checksum += byte;
+				}
+								
+				// checksum check
+				checksum += bytecount;
+				checksum += rtype;
+				checksum += (uint8_t) (address_val >> 8);
+				checksum += (uint8_t) address_val;
+								
+				if(checksum != 0) {
+					USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_CHECKSUM);
+					upload_running = 0;
+					break;
+				}
+								
+				set_rgb_leds(4);
+								
+				// TODO: handle data upload pagewise
+								
+				handle_hex_data(address_val, bytecount, data_buf);
+								
+				USART_Transmit(BL_COM_REPLY_OK | BL_COM_UPLOADOK_LINEOK);
+			}
+		}
+	}
+}
+
+static inline void _handle_cmd_verify() {
+	set_rgb_leds(LED_BLUE);
+	
+	uint16_t addrh = (uint16_t) USART_Receive();
+	uint16_t addrl = (uint16_t) USART_Receive();
+	uint8_t num_bytes = USART_Receive();
+	
+	uint8_t* addr = (uint8_t*) ((addrh << 8) | addrl);
+	uint8_t* buffer = (uint8_t*) alloca(num_bytes);
+	uint8_t buffer_counter = 0;
+	
+	boot_spm_busy_wait();
+	boot_rww_enable();
+	
+	while(buffer_counter < num_bytes) {
+		if(num_bytes == 1) {
+			// read byte
+			uint8_t byte = pgm_read_byte(addr + buffer_counter);
+			buffer[buffer_counter] = byte;
+			buffer_counter += 1;
+			} else if(num_bytes == 2 || num_bytes == 3) {
+			// read word
+			uint16_t word = pgm_read_word(addr + buffer_counter);
+			uint8_t* byte_buf = (uint8_t*) &word;
+			buffer[buffer_counter] = byte_buf[0];
+			buffer[buffer_counter + 1] = byte_buf[1];
+			buffer_counter += 2;
+			} else {
+			// read dword
+			uint32_t dword = pgm_read_dword(addr + buffer_counter);
+			uint8_t* byte_buf = (uint8_t*) &dword;
+			buffer[buffer_counter] = byte_buf[0];
+			buffer[buffer_counter + 1] = byte_buf[1];
+			buffer[buffer_counter + 2] = byte_buf[2];
+			buffer[buffer_counter + 3] = byte_buf[3];
+			buffer_counter += 4;
+		}
+	}
+	
+	set_rgb_leds(LED_GREEN);
+	
+	for(uint8_t i = 0; i < num_bytes; i++)
+		USART_Transmit(buffer[i]);
+}
+
+static inline void _handle_cmd_fuses() {
+	set_rgb_leds(LED_BLUE);
+	
+	uint8_t fuses_lo = boot_lock_fuse_bits_get(GET_LOW_FUSE_BITS);
+	uint8_t fuses_hi = boot_lock_fuse_bits_get(GET_HIGH_FUSE_BITS);
+	uint8_t fuses_ex = boot_lock_fuse_bits_get(GET_EXTENDED_FUSE_BITS);
+	uint8_t locks = boot_lock_fuse_bits_get(GET_LOCK_BITS);
+	
+	USART_Transmit(fuses_lo);
+	USART_Transmit(fuses_hi);
+	USART_Transmit(fuses_ex);
+	USART_Transmit(locks);
+	
+	set_rgb_leds(LED_GREEN);
+}
+
+static inline void _handle_cmd_info() {
+	USART_Transmit(sizeof(BL_INFO_VERSION) - 1);
+	USART_TransmitString(BL_INFO_VERSION);
+	
+	USART_Transmit(sizeof(bl_sectionstartaddress));
+	for(uint8_t i = 0; i < sizeof(bl_sectionstartaddress); i++) {
+		USART_Transmit((uint8_t) ((uint16_t)bl_sectionstartaddress >> (8*i)) );
+	}
+}
+
+
 // bootloader entry
 int main() {
 	uint8_t temp;
@@ -246,7 +458,7 @@ int main() {
 	sei();
 	
 	// disable SPM for the bootloader section
-	boot_lock_bits_set (_BV (BLB11));
+	//boot_lock_bits_set (_BV (BLB11));
 	
 	// Boot Mode Enable Switch
 	BLE_SWITCH_DDRX &= (1<<BLE_SWITCH_DDRXn);
@@ -282,231 +494,28 @@ int main() {
 				// Send information about the bootloader: Version, Boot Section Start Address
 				case 'i': {
 					USART_Transmit(BL_COM_REPLY_OK);
-					
-					USART_Transmit(sizeof(BL_INFO_VERSION) - 1);
-					USART_TransmitString(BL_INFO_VERSION);
-					
-					USART_Transmit(sizeof(bl_sectionstartaddress));
-					for(uint8_t i = 0; i < sizeof(bl_sectionstartaddress); i++) {
-						USART_Transmit((uint8_t) ((uint16_t)bl_sectionstartaddress >> (8*i)) );
-					}
+					_handle_cmd_info();
 					
 					break;
 				}
 				// read low, high, extended fuse bytes
 				case 'f': {
-					set_rgb_leds(LED_BLUE);
-					USART_Transmit(BL_COM_REPLY_OK | 3);
-				
-					uint8_t fuses_lo = boot_lock_fuse_bits_get(GET_LOW_FUSE_BITS);
-					uint8_t fuses_hi = boot_lock_fuse_bits_get(GET_HIGH_FUSE_BITS);
-					uint8_t fuses_ex = boot_lock_fuse_bits_get(GET_EXTENDED_FUSE_BITS);
-				
-					USART_Transmit(fuses_lo);
-					USART_Transmit(fuses_hi);
-					USART_Transmit(fuses_ex);
-				
-					set_rgb_leds(LED_GREEN);
-				
+					USART_Transmit(BL_COM_REPLY_OK);
+					_handle_cmd_fuses();	
+								
 					break;
 				}
 				// upload program
 				case 'u': {
 					USART_Transmit(BL_COM_REPLY_OK);
-					
-					set_rgb_leds(0);
-					
-					uint8_t upload_running = 1;
-					while(upload_running) {
-						set_rgb_leds(7);
-						uint8_t read_buffer[9];
-						USART_ReceiveMultiple((char*)read_buffer, 9);
-						
-						if(read_buffer[0] != ':') {
-							USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_COLON);
-							upload_running = 0;
-							break;
-						}
-						
-						uint8_t bytecount;
-						if(get_hex_val_8(&bytecount, read_buffer, 1)) {
-							USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_8);
-							upload_running = 0;
-							break;
-						}
-						
-						uint8_t rtype;
-						if(get_hex_val_8(&rtype, read_buffer, 7)) {
-							USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_8);
-							upload_running = 0;
-							break;
-						}
-						
-						USART_Transmit(BL_COM_REPLY_OK | BL_COM_UPLOADOK_HEADEROK);
-						set_rgb_leds(6);
-						
-						uint8_t* data_buf = alloca(bytecount * 2 + 2);
-						USART_ReceiveMultiple((char*)data_buf, bytecount * 2 + 2);
-						
-						set_rgb_leds(5);
-						
-						switch(rtype) {
-							case HEX_RTYPE_EOF: {
-								
-								uint16_t address_val;
-								if(get_hex_val_16(&address_val, read_buffer, 3)) {
-									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_16);
-									upload_running = 0;
-									break;
-								}
-								
-								uint8_t checksum_val;
-								if(get_hex_val_8(&checksum_val, data_buf, 0)) {
-									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_16);
-									upload_running = 0;
-									break;
-								}
-								
-								uint8_t checksum = 0;
-								checksum += bytecount;
-								checksum += rtype;
-								checksum += (uint8_t) (address_val >> 8);
-								checksum += (uint8_t) address_val;
-								checksum += checksum_val;
-								
-								if(checksum != 0) {
-									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_CHECKSUM);
-									upload_running = 0;
-									break;
-								}
-								
-								handle_final_write();
-								USART_Transmit(BL_COM_REPLY_OK | BL_COM_UPLOADOK_FINISHED);
-								upload_running = 0;
-								break;
-							}
-							case HEX_RTYPE_STARTSEGMENTADDRESSRECORD: {
-								/*
-								uint16_t address_val;
-								if(get_hex_val_16(&address_val, read_buffer, 3)) {
-									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_16);
-									upload_running = 0;
-									break;
-								}
-								
-								uint8_t checksum_val;
-								if(get_hex_val_8(&checksum_val, data_buf, 0)) {
-									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_16);
-									upload_running = 0;
-									break;
-								}
-								
-								uint8_t checksum = 0;
-								checksum += bytecount;
-								checksum += rtype;
-								checksum += (uint8_t) (address_val >> 8);
-								checksum += (uint8_t) address_val;
-								checksum += checksum_val;
-								
-								if(checksum != 0) {
-									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_CHECKSUM);
-									upload_running = 0;
-									break;
-								}
-								*/
-								
-								USART_Transmit(BL_COM_REPLY_OK);
-								break;
-							}
-							case HEX_RTYPE_DATARECORD: {
-								uint16_t address_val;
-								if(get_hex_val_16(&address_val, read_buffer, 3)) {
-									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_16);
-									upload_running = 0;
-									break;
-								}
-																
-								uint8_t checksum = 0;
-								for(uint8_t i = 0; i < bytecount + 1; i++) { // + 1: checksum
-									uint8_t byte;
-									if(get_hex_val_8(&byte, data_buf, 2*i)) {
-										USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_HEXVAL_8);
-										upload_running = 0;
-										break;
-									}
-									data_buf[i] = byte;
-									checksum += byte;
-								}
-								
-								// checksum check
-								checksum += bytecount;
-								checksum += rtype;
-								checksum += (uint8_t) (address_val >> 8);
-								checksum += (uint8_t) address_val;
-								
-								if(checksum != 0) {
-									USART_Transmit(BL_COM_REPLY_UPLOADERROR | BL_COM_UPLOADERR_CHECKSUM);
-									upload_running = 0;
-									break;
-								}
-								
-								set_rgb_leds(4);
-								
-								// TODO: handle data upload pagewise
-								
-								handle_hex_data(address_val, bytecount, data_buf);
-								
-								USART_Transmit(BL_COM_REPLY_OK | BL_COM_UPLOADOK_LINEOK);
-							}
-						}
-					}
+					_handle_cmd_upload();
 					
 					break;
 				}
 				// verify memory
 				case 'v': {
 					USART_Transmit(BL_COM_REPLY_OK);
-					
-					set_rgb_leds(LED_BLUE);
-					
-					uint16_t addrh = (uint16_t) USART_Receive();
-					uint16_t addrl = (uint16_t) USART_Receive();
-					uint8_t num_bytes = USART_Receive();
-					
-					uint8_t* addr = (uint8_t*) ((addrh << 8) | addrl); 
-					uint8_t* buffer = (uint8_t*) alloca(num_bytes);
-					uint8_t buffer_counter = 0;
-					
-					while(buffer_counter < num_bytes) {
-						if(num_bytes == 1) {
-							// read byte
-							uint8_t byte = pgm_read_byte(addr + buffer_counter);
-							buffer[buffer_counter] = byte;
-							buffer_counter += 1;
-						} else if(num_bytes == 2 || num_bytes == 3) {
-							// read word
-							uint16_t word = pgm_read_word(addr + buffer_counter);
-							uint8_t* byte_buf = (uint8_t*) &word;
-							buffer[buffer_counter] = byte_buf[0];
-							buffer[buffer_counter + 1] = byte_buf[1];
-							buffer_counter += 2;
-						} else {
-							// read dword
-							uint32_t dword = pgm_read_dword(addr + buffer_counter);
-							uint8_t* byte_buf = (uint8_t*) &dword;
-							buffer[buffer_counter] = byte_buf[0];
-							buffer[buffer_counter + 1] = byte_buf[1];
-							buffer[buffer_counter + 2] = byte_buf[2];
-							buffer[buffer_counter + 3] = byte_buf[3];
-							buffer_counter += 4;
-						}
-					}
-					
-					set_rgb_leds(LED_GREEN);
-					
-					for(uint8_t i = 0; i < num_bytes; i++)
-						USART_Transmit(buffer[i]);
-					
+					_handle_cmd_verify();
 					
 					break;
 				}

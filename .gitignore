@@ -2,6 +2,7 @@
 Debug/
 .runtime/
 .index/
+tmp/
 
 atmega_gpio-utils.h
 
