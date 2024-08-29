@@ -106,9 +106,9 @@ Boot Loader Enable Switch Pin: If BLE Type is switch, define pin and ports here
 #define BAUDRATE 19200
 #include "MyUSART.h"
 
-uint16_t page_start_address = 0x0;
-uint16_t next_page_start_address = 0x0 + SPM_PAGESIZE;
-uint8_t page_used = 0;
+volatile uint16_t page_start_address = 0;
+volatile uint16_t next_page_start_address = SPM_PAGESIZE;
+volatile uint8_t page_used = 0;
 
 uint8_t* const bl_sectionstartaddress = (uint8_t* const) BL_INFO_BLSECTIONSTART;
 
@@ -122,10 +122,15 @@ void set_rgb_leds(uint8_t flag) {
 	PORTD = temp;
 }
 
-
-static inline void handle_final_write() {
+static inline void handle_page_write(uint8_t* ram_page_buffer) {
+	uint16_t counter = 0;
 	if(page_used) {
 		// write page
+		for(counter = 0; counter < SPM_PAGESIZE; counter += 2) {
+			boot_spm_busy_wait();
+			boot_page_fill(counter, ram_page_buffer[counter + 1] << 8 | ram_page_buffer[counter]);
+		}
+		
 		boot_spm_busy_wait();
 		boot_page_erase(page_start_address);
 		boot_spm_busy_wait();
@@ -134,7 +139,7 @@ static inline void handle_final_write() {
 	}
 }
 
-void handle_hex_data(uint16_t addr, uint8_t bytecount, uint8_t* data_buf) {
+void handle_hex_data(uint16_t addr, uint8_t bytecount, uint8_t* data_buf, uint8_t* ram_page_buffer) {
 	uint8_t sreg;
 	
 	sreg = SREG;
@@ -151,46 +156,32 @@ void handle_hex_data(uint16_t addr, uint8_t bytecount, uint8_t* data_buf) {
 			boot_rww_enable();
 			
 			// fill temporary page buffer with current content of new page
-			for(counter = 0; counter < SPM_PAGESIZE; counter += 2) {
-				uint16_t word = pgm_read_word(page_start_address + counter);
-				boot_spm_busy_wait();
-				boot_page_fill(counter, word);
+			for(counter = 0; counter < SPM_PAGESIZE; counter++) {
+				ram_page_buffer[counter] = pgm_read_byte(page_start_address + counter);
 			}
-			boot_spm_busy_wait();
+			page_used = 1;
 		}
 		
 		address_offset = addr - page_start_address;
-		for(counter = 0; counter < bytecount && addr + counter < next_page_start_address; counter += 2) {
+		for(counter = 0; counter < bytecount && addr + counter < next_page_start_address; counter++) {
 			// write word to temporary page buffer
-			uint16_t word = data_buf[counter + 1];
-			word <<= 8;
-			word |= data_buf[counter];
-			boot_spm_busy_wait();
-			boot_page_fill(address_offset + counter, word);
-			page_used = 1;
+			ram_page_buffer[address_offset + counter] = data_buf[counter];
 		}
 		
 		// handle data that spans over multiple pages
 		if(addr + bytecount - 1 >= next_page_start_address) {
 			uint16_t overlap = addr + bytecount - next_page_start_address;
-			handle_hex_data(next_page_start_address, overlap, data_buf + bytecount - overlap);
+			handle_hex_data(next_page_start_address, overlap, data_buf + bytecount - overlap, ram_page_buffer);
 		}
 		
 	} else {
-		if(page_used) {
-			boot_spm_busy_wait();
-			boot_page_erase(page_start_address);
-			boot_spm_busy_wait();
-			boot_spm_busy_wait();
-			boot_page_write(page_start_address);
-			boot_spm_busy_wait();
-		}
+		handle_page_write(ram_page_buffer);
 		
-		page_start_address = addr - (addr % SPM_PAGESIZE);
+		page_start_address = addr & ~(SPM_PAGESIZE - 1);
 		next_page_start_address = page_start_address + SPM_PAGESIZE;
 		page_used = 0;
 		
-		handle_hex_data(addr, bytecount, data_buf);
+		handle_hex_data(addr, bytecount, data_buf, ram_page_buffer);
 	}
 	
 	SREG = sreg;
@@ -226,6 +217,8 @@ uint8_t get_hex_val_16(uint16_t* hexval, uint8_t* read_buffer, uint8_t start) {
 }
 
 static inline void _handle_cmd_upload() {
+	uint8_t ram_page_buffer[SPM_PAGESIZE];
+	
 	set_rgb_leds(0);
 					
 	uint8_t upload_running = 1;
@@ -292,7 +285,7 @@ static inline void _handle_cmd_upload() {
 					break;
 				}
 								
-				handle_final_write();
+				handle_page_write(ram_page_buffer);
 				USART_Transmit(BL_COM_REPLY_OK | BL_COM_UPLOADOK_FINISHED);
 				upload_running = 0;
 				break;
@@ -366,7 +359,7 @@ static inline void _handle_cmd_upload() {
 								
 				// TODO: handle data upload pagewise
 								
-				handle_hex_data(address_val, bytecount, data_buf);
+				handle_hex_data(address_val, bytecount, data_buf, ram_page_buffer);
 								
 				USART_Transmit(BL_COM_REPLY_OK | BL_COM_UPLOADOK_LINEOK);
 			}
@@ -464,8 +457,13 @@ int main() {
 	BLE_SWITCH_DDRX &= (1<<BLE_SWITCH_DDRXn);
 	BLE_SWITCH_PORTX |= (1<<BLE_SWITCH_PORTXn); // enable pullup
 	
+	// prepare bootloader globals
+	page_start_address = 0;
+	next_page_start_address = SPM_PAGESIZE;
+	page_used = 0;
+	
+	
 	// check if boot mode should be entered
-
 #if BL_ENABLE_TYPE == BLE_BUTTON
 	if(!(BLE_SWITCH_PINX & (1<<BLE_SWITCH_PINXn))) {
 #else // BL_ENABLE_TYPE == BLE_ALWAYS

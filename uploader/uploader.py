@@ -174,7 +174,7 @@ def verify_program(ser, hexfile, comdefines, args):
 
             # is
             if(args.verbose):
-                print(f'0x{addrh:02x}{addrl:02x} | {bytecount:2} | ', end='')
+                print(f'0x{addrh:02X}{addrl:02X} | {bytecount:2} | ', end='')
 
             ser.write(addrh.to_bytes(1))
             ser.write(addrl.to_bytes(1))
@@ -186,7 +186,7 @@ def verify_program(ser, hexfile, comdefines, args):
             
             for i, byte in enumerate(memory_data):
                 if(args.verbose):
-                    print(f'{byte:02x} ', end='')
+                    print(f'{byte:02X} ', end='')
                 if(byte != data_binary[i]):
                     num_errors += 1
                     error_detected = True
@@ -201,7 +201,7 @@ def verify_program(ser, hexfile, comdefines, args):
                 pagecounter += bytecount
                 if(args.verbose):
                     for byte in data_binary:
-                        print(colored(f'{byte:02x} ', 'red'), end='')
+                        print(colored(f'{byte:02X} ', 'red'), end='')
                     print()
                     print()
         else:
