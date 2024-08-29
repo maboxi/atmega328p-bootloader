@@ -13,6 +13,109 @@ RT_DATARECORD = '00'
 RT_EOF = '01'
 RT_STARTSEGMENTADDRESSRECORD = '03'
 
+def decode_fuse_ext(fuse):
+    f_bod210 = fuse & 7
+    print('\tBrown Out Detection: ', end='')
+    min_typ_max = []
+    match(f_bod210):
+        case 0b111:
+            print('BOD Disabled')
+        case 0b110:
+            min_typ_max.extend([1.7, 1.8, 2.0])
+        case 0b101:
+            min_typ_max.extend([2.5, 2.7, 2.9])
+        case 0b100:
+            min_typ_max.extend([4.1, 4.3, 4.5])
+        case _:
+            print(f'Unknown ({f_bod210} is reserved)')
+
+    if(len(min_typ_max) > 0):
+        print(f'Min. V_bot = {min_typ_max[0]}, Typ. V_bot = {min_typ_max[1]}, Max. V_bot = {min_typ_max[2]}')
+
+def print_fuse(fuse_val, prompt, text_unprogrammed, text_programmed):
+    print(f'\t{prompt:<20}{text_unprogrammed if fuse_val > 0 else text_programmed}')
+
+def decode_fuse_high(fuse):
+    f_rstdisbl = (fuse & (1<<7)) >> 7
+    f_dwen = (fuse & (1<<6)) >> 6
+    f_spien = (fuse & (1<<5)) >> 5
+    f_wdton = (fuse & (1<<4)) >> 4
+    f_eesave = (fuse & (1<<3)) >> 3
+    f_bootsz10 = (fuse & (1<<2 | 1<<1)) >> 1
+    f_bootrst = (fuse & 1)
+
+    print_fuse(f_rstdisbl, 'External Reset: ', 'Enabled', 'Disabled')
+    print_fuse(f_dwen, 'debugWIRE: ', 'Disabled', 'Enabled')
+    print_fuse(f_spien, 'Serial Program and Data Downloading: ', 'Disabled', 'Enabled')
+    print_fuse(f_wdton, 'Watchdog Timer: ', 'Not Always On', 'Always On')
+    print_fuse(f_eesave, 'EEPROM Memory: ', 'Preserved through the Chip Erase', 'Deleted on Chip Erase')
+
+    bootsz_info = []
+    match(f_bootsz10):
+        case 0b11:
+            bootsz_info = [64, 4, 0x3F00, 0x3FFF]
+        case 0b10:
+            bootsz_info = [64, 8, 0x3E00, 0x3FFF]
+        case 0b01:
+            bootsz_info = [64, 16, 0x3C00, 0x3FFF]
+        case 0b00:
+            bootsz_info = [64, 32, 0x3800, 0x3FFF]
+
+    print(f'\tBoot Size: {bootsz_info[1]} pages, page size = {bootsz_info[0]} -> {bootsz_info[0] * bootsz_info[1]} bytes')
+    print(f'\t\t=> Application Section: 0x0000 - 0x{bootsz_info[2] - 1:4X}')
+    print(f'\t\t=> Boot Section: 0x{bootsz_info[2]:4X} - 0x{bootsz_info[3]:4X}')
+
+    print_fuse(f_bootrst, 'Selected Reset Vector: ', 'Application (0x0000)', f'Boot Loader (0x{bootsz_info[2]:4X})')
+
+
+def decode_fuse_low(fuse):
+    f_ckdiv8 = (fuse & (1<<7)) >> 7
+    f_ckout = (fuse & (1<<6)) >> 6
+    f_sut10 = (fuse & (1<<5 | 1<<4)) >> 4
+    f_cksel3210 = (fuse & (1<<3 | 1<<2 | 1<<1 | 1))
+    print_fuse(f_ckdiv8, 'Clock Divided by 8: ', 'No', 'Yes')
+    print_fuse(f_ckout, 'Clock Output (PORTB0): ', 'Disabled', 'Enabled')
+
+    print('\tClock Source: ', end='')
+    match f_cksel3210:
+        case 0b1111 | 0b1110 | 0b1101 | 0b1100 | 0b1011 | 0b1010 | 0b1001 | 0b1000:
+            print('Lower Power Crystal Oscillator')
+        case 0b0111 | 0b0110:
+            print('Full Swing Crystal Oscillator')
+        case 0b0101 | 0b0100:
+            print('Lower Frequency Crystal Oscillator')
+        case 0b0011:
+            print('Internal 128kHz RC Oscillator')
+        case 0b0010:
+            print('Calibrated Internal RC Oscillator')
+        case 0b0000:
+            print('External Clock')
+        case _:
+            print(f'Unknown ({f_cksel3210} is reserved)')
+
+    print(f'\tStart-up times for clock selection: SUT1..0 = {f_sut10} ')
+
+
+
+def read_fuses(ser, comdefines, args):
+    status = serial_send_code(ser, 'BL_COM_CMD_READFUSES')
+    if(status & comdefines['BL_COM_REPLY_STATUSMASK'] == comdefines['BL_COM_REPLY_OK']):
+        fuse_values = ser.read(size=3)
+        print('-'*90)
+        print('Fuse values:')
+
+        print(f'Extended: -----{(fuse_values[2] & 7):b}')
+        decode_fuse_ext(fuse_values[2])
+        print(f'High: {fuse_values[1]:b}')
+        decode_fuse_high(fuse_values[1])
+        print(f'Low: {fuse_values[0]:b}')
+        decode_fuse_low(fuse_values[0])
+        print('-'*90)
+    else:
+        print(f'Error: fuse read request returned: {status}')
+
+
+
 def serial_send_code(ser: Serial, code):
     ser.write(comdefines[code])
     return int.from_bytes(ser.read(size=1))
@@ -298,21 +401,13 @@ if __name__ == '__main__':
                 print('Bootloader Information:')
                 print(f'\tVersion: {bl_version}')
                 print(f'\tTool Version: {TOOL_VERSION}')
-                print(f'\tBootloader Section Start Address: 0x{bl_section_start:x}')
+                print(f'\tBootloader Section Start Address: 0x{bl_section_start:X}')
         else:
             print(f'Error: information request returned: {status}')
 
         # read fuses
         if(args.fuses):
-            status = serial_send_code(ser, 'BL_COM_CMD_READFUSES')
-            if(status & comdefines['BL_COM_REPLY_STATUSMASK'] == comdefines['BL_COM_REPLY_OK']):
-                fuse_values = ser.read(size=3)
-                print('Fuse values:')
-                print(f'\tExtended: -----{(fuse_values[2] & 7):b}')
-                print(f'\tHigh:     {fuse_values[1]:b}')
-                print(f'\tLow:      {fuse_values[0]:b}')
-            else:
-                print(f'Error: fuse read request returned: {status}')
+            read_fuses(ser, comdefines, args)
 
         # hex file: upload and / or verify
         verify = not args.no_verify
