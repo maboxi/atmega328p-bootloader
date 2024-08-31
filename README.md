@@ -42,6 +42,12 @@ Python tool usage (developed using Python 3.12.0):
         --no-quit             don't quit bootloader after tasks are finished
         -v, --verbose
 
+## Rust Bootloader-Tool [WIP]
+
+...
+
+# Helpful Information
+
 ## Useful AVRDUDE Commands
 
 - Read fuses: -U lfuse|hfuse|efuse:r:-:b -> Displays binary representation of fuse values
