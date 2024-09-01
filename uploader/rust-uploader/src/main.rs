@@ -1,112 +1,53 @@
-use std::{fs::read, io::{Error, ErrorKind, Write}, sync::{atomic::{AtomicBool, Ordering}, Arc}, time::Duration};
+#![allow(dead_code)]
+//use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 use clap::{value_parser, Arg, ArgAction, Command};
-use serialport::SerialPort;
 
-const STATUS_MASK: u8 = 0b01110000;
-const STATUS_OK: u8 = 7<<4;
+pub mod serialporthandler;
+use serialporthandler::SerialPortHandler;
 
-struct SerialPortHandler {
-    sp: Box<dyn SerialPort>,
-    data_buffer: Vec<u8>,
-}
+pub mod atmega;
+use atmega::{decode_fuses_locks, BootloaderInfo};
 
-impl SerialPortHandler {
-    fn open(port: &String, baudrate: u32) -> Result<Self, Error> {
-        print!("Trying to connect to serial port {port} with baudrate {baudrate}... ");
-        let port_builder = serialport::new(port, baudrate);
+pub mod hexutils;
+use hexutils::{read_hexfile, RT_DATARECORD};
 
-        let sp = port_builder
-            .timeout(Duration::from_millis(5000))
-            .open();
+pub mod uploader_errors;
+use uploader_errors::*;
 
-        if sp.is_err() {
-            println!();
-            let err = sp.unwrap_err();
+const TOOL_VERSION: &str = "0.1";
 
-            match err.kind() {
-                serialport::ErrorKind::NoDevice => {
-                    let avail_ports = serialport::available_ports().expect("Error reading available serial ports");
-                    let port_blocked= avail_ports.iter().find(|port_info| port_info.port_name.eq_ignore_ascii_case(port.as_str())).is_some();
+const BL_COM_BL_READY: char = 'r';
 
-                    if port_blocked {
-                        println!("Serial port '{port}' is in use!");
-                    } else {
-                        println!("Serial port '{port}' does not exist!");
-                        print!("Available Serial Ports: ");
-                        for (i, portinfo) in avail_ports.iter().enumerate() {
-                            if i != 0 {
-                                print!(", ");
-                            }
-                            print!("{}", portinfo.port_name);
-                        }
-                        println!();
-                    }
-                    return Err(Error::new(ErrorKind::NotFound, err));
-                },
-                _ => {
-                    println!("Error connecting to serial port '{port}': {err} (ErrorKind: {:?})", err.kind());
-                    return Err(Error::new(ErrorKind::Other, err));
-                }
-            }
-        }
+const BL_COM_CMD_QUIT: char = 'q';
+const BL_COM_CMD_READFUSES: char = 'f';
+const BL_COM_CMD_INFO: char = 'i';
+const BL_COM_CMD_UPLOAD: char = 'u';
+const BL_COM_CMD_VERIFY: char = 'v';
 
-        println!("Success!");
-        Ok(SerialPortHandler {
-            sp: sp.unwrap(),
-            data_buffer: vec![]
-        })
-    }
+const BL_COM_REPLY_STATUSMASK: u8 = 0b01110000;
+const BL_COM_REPLY_OK: u8 = 7<<4;
+const BL_COM_REPLY_UNKNOWNCMD: u8 = 6<<4;
+const BL_COM_REPLY_QUITTING: u8 = 5<<4;
+const BL_COM_REPLY_NOTIMPLEMENTEDYET: u8 = 4<<4;
+const BL_COM_REPLY_UPLOADERROR: u8 = 3<<4;
 
-    fn send_code(&mut self, code: char) -> Result<u8, Error> {
-        let write_buffer = [code as u8];
+const BL_COM_UPLOADINFO_MASK: u8 = 0b00001111;
 
-        if self.sp.write(&write_buffer)? == 0 {
-            panic!("Error sending code {code}");
-            //return Err(Error::from(ErrorKind::TimedOut));
-        }
-        self.data_buffer.clear();
-        return self.receive_byte();
-    }
-    
-    fn receive_multiple(&mut self, n: usize) -> Result<Vec<u8>, Error> {
-        for _i in 0..5 {
-            if self.data_buffer.len() < n {
-                let mut read_buffer: [u8; 256] = [0; 256];
-                let recv_info = self.sp.read(&mut read_buffer)?;
+const BL_COM_UPLOADERR_COLON: u8 = 1;
+const BL_COM_UPLOADERR_HEXVAL_8: u8 = 2;
+const BL_COM_UPLOADERR_HEXVAL_16: u8 = 3;
+const BL_COM_UPLOADERR_LINELEN: u8 = 4;
+const BL_COM_UPLOADERR_CHECKSUM: u8 = 5;
 
-                if recv_info == 0 {
-                    panic!("Error receiving {n} bytes");
-                    //return Err(Error::from(ErrorKind::TimedOut));
-                }
+const BL_COM_UPLOADOK_FINISHED: u8 = 1;
+const BL_COM_UPLOADOK_HEADEROK: u8 = 2;
+const BL_COM_UPLOADOK_LINEOK: u8 = 3;
 
-                self.data_buffer.extend(&read_buffer[..recv_info]);
-            } else {
-                break;
-            }
-        }
 
-        if self.data_buffer.len() >= n {
-            let ret_vec = self.data_buffer.drain(..n).collect();
-            return Ok(ret_vec);
-        } else {
-            panic!("Couldn't read enough data from serial port!"); // TODO: change into return Err(...)
-        }
-    }
-
-    fn receive_byte(&mut self) -> Result<u8, Error> {
-        let buf = self.receive_multiple(1)?;
-        return Ok(buf[0]);
-    }
-}
-
-fn status_ok(status: u8) -> bool {
-    (status & STATUS_MASK) == STATUS_OK
-}
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), UploaderError> {
     // Command-line options
     let matches = Command::new("atmega-uploader")
-        .arg(Arg::new("port").short('p').long("port").help("Serial Port name").required(true))
+        .arg(Arg::new("port").short('p').long("port").help("Serial Port name"))
         .arg(Arg::new("baudrate").long("baudrate").help("Baudrate of serial connection").value_parser(value_parser!(u32)).default_value("19200"))
         .arg(Arg::new("hexfile").short('f').long("file").help("Firmware Intel Hex file"))
         .arg(Arg::new("skip-upload").long("no-upload").help("Skip firmware upload").action(ArgAction::SetTrue))
@@ -121,6 +62,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let do_upload = !matches.get_flag("skip-upload");
     let do_verify = !matches.get_flag("skip-verify");
     let do_quit = !matches.get_flag("dont-quit");
+    let read_fuses = matches.get_flag("read-fuses");
+    let hexfile = matches.get_one::<String>("hexfile");
 
     //println!("Options: verbose={verbose}, upload={do_upload}, verify={do_verify}, quit={do_quit}");
 
@@ -129,6 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 
     // ctrl c handler
+    /*
     let keep_reading = Arc::new(AtomicBool::new(true));
     let keep_reading_hook = keep_reading.clone();
 
@@ -136,29 +80,184 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Received CTRL-C! Exiting...");
         keep_reading_hook.store(false, Ordering::Relaxed);
     }).expect("Error setting CTRL-C hook");
+    */
 
 
     // start connection
     let mut sp = SerialPortHandler::open(&selected_port, selected_baudrate)?;
     println!();
+    let is_status = |reply: u8, status: u8| (reply & BL_COM_REPLY_STATUSMASK) == status;
 
-    let mut version_str: String;
+    let mut bootloader_info = BootloaderInfo::new();
 
     // Request informaton from bootloader
-    let status = sp.send_code('i')?;
-    if status_ok(status) {
-        println!("Receiving info");
+    let status = sp.send_code(BL_COM_CMD_INFO)?;
+    if is_status(status, BL_COM_REPLY_OK) {
         let ver_len = sp.receive_byte()? as usize;
-        let ver_bytes = sp.receive_multiple(ver_len)?;
-        version_str = String::from_utf8(ver_bytes).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+        bootloader_info.version = String::from_utf8(sp.receive_multiple(ver_len)?).map_err(|e| UploaderError::new(ErrorKind::StringDecoding, Box::new(e)))?;
 
         let ssa_len = sp.receive_byte()? as usize;
         let ssa_bytes = sp.receive_multiple(ssa_len)?;
-        let ssa = u16::from_le_bytes(ssa_bytes.try_into().expect("Error converting bytes to int"));
+        bootloader_info.ssa = u16::from_le_bytes(ssa_bytes.try_into().expect("Error converting bytes to int"));
 
         println!("Bootloader info:");
-        println!("\tVersion: {version_str}");
-        println!("\tBLS Start Address: {ssa:x}")
+        println!("\tVersion: {}", bootloader_info.version);
+        println!("\tBLS Start Address: 0x{:X} (word address: 0x{:X})", bootloader_info.ssa, bootloader_info.ssa/2);
+        println!();
+    } else {
+        return Err(UploaderError::from(ErrorKind::BootloaderCMDResponse(status, BL_COM_CMD_INFO)));
+    }
+
+    if read_fuses {
+        let status = sp.send_code(BL_COM_CMD_READFUSES)?;
+        if is_status(status, BL_COM_REPLY_OK) {
+            println!("Reading fuses...");
+            let fuse_values = sp.receive_multiple(4)?;
+
+            decode_fuses_locks(fuse_values.try_into().unwrap_or_else(|_| panic!("Error converting fuse value vec into array (shouldn't be possible!)")));
+            println!();
+        } else {
+            return Err(UploaderError::from(ErrorKind::BootloaderCMDResponse(status, BL_COM_CMD_READFUSES)));
+        }
+
+    }
+    
+    if let Some(hexfile) = hexfile {
+        if do_upload || do_verify {
+            println!("Reading in hex file {hexfile}...");
+            let hexfile = read_hexfile(&hexfile, bootloader_info.ssa, verbose)?;
+            println!();
+
+            if do_upload {
+                if hexfile.ok_to_upload {
+                    println!("Initiating hex file upload...");
+
+                    let status = sp.send_code(BL_COM_CMD_UPLOAD)?;
+
+                    let upload_error_handling = |header_reply: u8, _linenum: usize, _is_header: bool| -> bool {
+                        is_status(header_reply, BL_COM_REPLY_OK)
+                    };
+
+                    if is_status(status, BL_COM_REPLY_OK) {
+                        let mut num_errors = 0;
+                        for (linenum, line_data) in hexfile.lines.iter().enumerate() {
+                            let (linestr, _address, _bytecount, _rtype, _linebytes) = line_data;
+                            if verbose {
+                                print!("Line {linenum:3}: Line = {} -> ", linestr);
+                            }
+                            sp.write(&linestr[..9].as_bytes())?;
+
+                            let header_reply = sp.receive_byte()?;
+                            if upload_error_handling(header_reply, linenum, true) {
+                                sp.write(&linestr[9..].as_bytes())?;
+
+                                let body_reply = sp.receive_byte()?;
+                                if upload_error_handling(body_reply, linenum, false) {
+                                    if verbose {
+                                        println!("Upload OK");
+                                    }
+                                } else {
+                                    num_errors += 1;
+                                    break;
+                                }
+                            } else {
+                                num_errors += 1;
+                                break;
+                            }
+                        }
+
+                        if num_errors == 0 {
+                            if let Some(addr_min) = hexfile.addr_min {
+                                if let Some(addr_max) = hexfile.addr_max {
+                                    let mem_usage = (addr_max - addr_min) as f64 / (bootloader_info.ssa as f64);
+                                    println!("\t=> Upload complete! Memory usage: {:.1}%", 100.0 *mem_usage);
+                                }
+                            }
+                        } else {
+                            println!("\t=> Upload: {num_errors} errors occured!");
+                        }
+
+                    } else {
+                        return Err(UploaderError::from(ErrorKind::BootloaderCMDResponse(status, BL_COM_CMD_INFO)));
+                    }
+
+                    println!();
+                } else {
+                    println!("Skipping upload to preserve bootloader section!");
+                }
+            }
+
+            if do_verify {
+                println!("Verifying upload...");
+                let mut num_errors = 0;
+
+                for (linenum, line_data) in hexfile.lines.iter().enumerate() {
+                    let (_linestr, address, bytecount, rtype, linebytes) = line_data;
+                    if *rtype != RT_DATARECORD {
+                        continue;
+                    }
+
+                    let status = sp.send_code(BL_COM_CMD_VERIFY)?;
+                    if is_status(status, BL_COM_REPLY_OK) {
+                        if verbose {
+                            print!("0x{address:4X} | {bytecount:2} | ");
+                        }
+                        sp.write(&address.to_be_bytes())?;
+                        sp.write(&bytecount.to_be_bytes())?;
+
+                        let memory_data = sp.receive_multiple(*bytecount as usize)?;
+
+                        let mut error_detected = false;
+
+                        for (bytenum, byte) in memory_data.iter().enumerate() {
+                            if verbose {
+                                print!("{byte:2X} ");
+                            }
+                            if *byte != linebytes[bytenum + 4] {
+                                num_errors += 1;
+                                error_detected = true;
+                            }
+                        }
+                        if verbose {println!()}
+
+                        if error_detected {
+                            if verbose {
+                                print!("should be     ");
+                                for byte in &linebytes[4..linebytes.len()-1] {
+                                    print!("{byte:2X} ");
+                                }
+                                println!();
+                                println!();
+                            }
+                        }
+
+                    } else {
+                        println!("Error verifying line {linenum}!");
+                        return Err(UploaderError::from(ErrorKind::BootloaderCMDResponse(status, BL_COM_CMD_VERIFY)));
+                    }
+                }
+
+                if verbose {
+                    println!();
+                }
+
+                if num_errors > 0 {
+                    println!("\t=> Errors detected: {num_errors}");
+                } else {
+                    println!("\t=> No errors detected!");
+                }
+            }
+        }
+    }
+
+    if do_quit {
+        print!("Quitting bootloader...");
+        let status = sp.send_code(BL_COM_CMD_QUIT)?;
+        if is_status(status, BL_COM_REPLY_QUITTING) {
+            println!("OK!");
+        }  else {
+            return Err(UploaderError::from(ErrorKind::BootloaderCMDResponse(status, BL_COM_CMD_QUIT)));
+        }
     }
     
     return Ok(())

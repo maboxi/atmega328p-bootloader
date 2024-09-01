@@ -418,7 +418,7 @@ if __name__ == '__main__':
     try:
         args = parser.parse_args()
 
-        comheader_filename = 'uart-bootloader/uart-bootloader/bootloader-communication.h'
+        comheader_filename = os.path.dirname(__file__) + '/../uart-bootloader/uart-bootloader/bootloader-communication.h'
         print(f'Reading com header file: {comheader_filename}')
         comdefines = extract_com_constants(comheader_filename)
         #print('Com Defines:')
